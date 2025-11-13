@@ -28,6 +28,8 @@ var contador_agente: int = 0
 var resolucao_tela_x: int = 0
 var resolucao_tela_y: int = 0
 
+var dados_custo_computacional: Array = []
+
 func _ready():
 	var viewport_size = get_viewport_rect().size
 	resolucao_tela_x = int(viewport_size.x)
@@ -289,6 +291,9 @@ func _process(delta):
 	if Input.is_action_just_pressed("gerar_aleatorios"):
 		print("--- Gerando Agentes Aleatórios (A) ---")
 		gerar_agentes_aleatorios(randi_range(2, 10))
+		
+	if Input.is_action_just_pressed("exportar_dados"): # Configurar 'exportar_dados' para a tecla 'E'
+		exportar_dados_csv()
 
 func mover_agente(agente: Agente, delta: float):
 	if agente.caminho_a_seguir.is_empty():
@@ -378,10 +383,26 @@ func criar_e_ativar_agente(spawn_coord: Vector2i, target_coord: Vector2i):
 	if spawn_coord == Vector2i(-1, -1) or target_coord == Vector2i(-1, -1):
 		# Esta checagem é mais relevante para o modo manual (batch)
 		return
+		
+	var tempo_inicio = Time.get_ticks_usec()
 	
 	# 1. Calcula o caminho (Pathfinding)
 	var caminho_encontrado = encontrar_caminho_para(spawn_coord, target_coord)
 	
+	var tempo_fim = Time.get_ticks_usec()
+	var tempo_gasto_ms = (tempo_fim - tempo_inicio) / 1000.0 
+	
+	if not caminho_encontrado.is_empty(): 
+		var dados_do_teste = {
+			"agente_id": contador_agente + 1,
+			"tempo_ms": tempo_gasto_ms,
+			"passos": caminho_encontrado.size(),
+			"distancia": spawn_coord.distance_to(target_coord),
+			"origem": spawn_coord,
+			"destino": target_coord
+		}
+		dados_custo_computacional.append(dados_do_teste)
+		
 	if caminho_encontrado.is_empty():
 		return false # Retorna falso se a rota falhar
 	
@@ -396,3 +417,40 @@ func criar_e_ativar_agente(spawn_coord: Vector2i, target_coord: Vector2i):
 	agentes.append(novo_agente)
 	print("Agente #%d criado (O: %s -> D: %s). Rota com %d passos." % [contador_agente, spawn_coord, target_coord, caminho_encontrado.size()])
 	return true
+	
+func exportar_dados_csv():
+	if dados_custo_computacional.is_empty():
+		print("Nenhum dado para exportar.")
+		return
+		
+	# --- CORREÇÃO: Usar o diretório de usuário (user://) ---
+	# O Godot garante a permissão de escrita aqui.
+	var nome_arquivo = "user://dados_custo_a_star.csv"
+	
+	# Usar FileAccess.open_for_path (Godot 4) para lidar com caminhos user://
+	var arquivo = FileAccess.open(nome_arquivo, FileAccess.WRITE) 
+	
+	if arquivo == null:
+		print("ERRO: Não foi possível abrir o arquivo para escrita. Verifique permissões ou caminho.")
+		return
+	
+	# Cabeçalho do CSV
+	var cabecalho = "Agente_ID;Tempo_ms;Passos_Rota;Distancia_Reta;Origem_X;Origem_Y;Destino_X;Destino_Y\n"
+	arquivo.store_string(cabecalho)
+	
+	# Escreve os dados
+	for dado in dados_custo_computacional:
+		var linha_csv = "%d;%.4f;%d;%.4f;%d;%d;%d;%d\n" % [
+			dado.agente_id,
+			dado.tempo_ms,
+			dado.passos,
+			dado.distancia,
+			dado.origem.x,
+			dado.origem.y,
+			dado.destino.x,
+			dado.destino.y
+		]
+		arquivo.store_string(linha_csv)
+		
+	arquivo.close()
+	print("Dados exportados com sucesso para: ", nome_arquivo)
